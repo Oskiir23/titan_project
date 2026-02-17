@@ -53,14 +53,15 @@ for i in range(20):
 print("    ✅ Spider tradicional completado")
 
 # ============================================
-# AJAX SPIDER (para encontrar rutas dinámicas)
+# AJAX SPIDER (CORREGIDO - status es propiedad)
 # ============================================
 print("[6] Iniciando AJAX Spider (para JS)...")
 zap.ajaxSpider.scan(target)
 time.sleep(10)
 
 for i in range(30):
-    status = zap.ajaxSpider.status()
+    # IMPORTANTE: status es una propiedad, NO una función
+    status = zap.ajaxSpider.status  # Sin paréntesis
     print(f"    AJAX Spider: {status}")
     if status == 'stopped':
         break
@@ -243,7 +244,7 @@ html_content += f"""
 """
 
 if low_alerts:
-    for alert in low_alerts[:10]:  # Limitar a 10 para no hacer el reporte enorme
+    for alert in low_alerts[:10]:
         risk_class = "high" if alert.get('risk') == 'High' else "medium" if alert.get('risk') == 'Medium' else "low"
         html_content += f"""
         <div class="alert alert-low">
