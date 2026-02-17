@@ -1,4 +1,4 @@
-name: DevSecOps Pipeline - Titan Logistics (EXAMEN)
+name: DevSecOps Pipeline - Titan Logistics (EXAMEN CORREGIDO)
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
         continue-on-error: true
 
       # ============================================
-      # SNYK - AHORA DENTRO DEL CONTENEDOR
+      # SNYK - CORREGIDO CON AUTH
       # ============================================
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -51,11 +51,12 @@ jobs:
           # Verificar logs
           docker logs titan-core
 
-      - name: Install Snyk in container
+      - name: Install Snyk in container with auth
         run: |
           docker exec titan-core apt-get update
           docker exec titan-core apt-get install -y npm
           docker exec titan-core npm install -g snyk
+          docker exec titan-core snyk auth ${{ secrets.SNYK_TOKEN }}
           docker exec titan-core snyk --version
 
       - name: Snyk Test inside container
@@ -72,10 +73,13 @@ jobs:
       - name: Generate Snyk HTML Report
         if: always()
         run: |
-          docker exec titan-core snyk test --severity-threshold=high --json > snyk-report.json || true
-          # Copiar el JSON del contenedor al runner
-          docker cp titan-core:/app/snyk-report.json ./snyk-report.json || true
-          snyk-to-html -i snyk-report.json -o snyk-report.html || true
+          docker exec titan-core snyk test --severity-threshold=high --json > /tmp/snyk-report.json || true
+          docker cp titan-core:/tmp/snyk-report.json ./snyk-report.json || true
+          if [ -f snyk-report.json ]; then
+            snyk-to-html -i snyk-report.json -o snyk-report.html || true
+          else
+            echo "⚠️ No se generó snyk-report.json"
+          fi
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
@@ -149,3 +153,17 @@ jobs:
           docker build -t titan-core-secured:latest .
           echo "✅ Imagen Docker construida: titan-core-secured:latest"
           docker images | grep titan-core
+
+      # ============================================
+      # NOTIFICACIÓN FINAL
+      # ============================================
+      - name: Notificación
+        if: always()
+        run: |
+          echo "========================================"
+          echo "🚀 Titan Logistics - Core v4.5 Enterprise"
+          echo "📊 Pipeline de seguridad completado"
+          echo "📦 Imagen final: titan-core-secured:latest"
+          echo "📈 SonarCloud: https://sonarcloud.io/project/overview?id=Oskiir23_titan_project"
+          echo "📊 Reportes disponibles en artifacts"
+          echo "========================================"
