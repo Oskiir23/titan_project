@@ -1,4 +1,4 @@
-name: DevSecOps Pipeline - Titan Logistics
+name: DevSecOps Pipeline - Titan Logistics (EXAMEN)
 
 on:
   push:
@@ -21,29 +21,47 @@ jobs:
         continue-on-error: true
 
       # ============================================
-      # SNYK
+      # SNYK - AHORA DENTRO DEL CONTENEDOR
       # ============================================
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
-      - name: Install dependencies
+      - name: Install dependencies for Snyk
         run: |
           sudo apt-get update
           sudo apt-get install -y libjpeg-dev zlib1g-dev python3-dev build-essential
           pip install --upgrade pip
           pip install pyyaml==5.4.1
-          pip install -r requirements.txt || true
 
-      - name: Install Snyk
+      - name: Build and Run Titan Legacy App
         run: |
-          npm install -g snyk
-          snyk --version
+          # Construir la imagen
+          docker build -t titan-legacy .
+          
+          # Ejecutar contenedor
+          docker run -d --name titan-core -p 5000:5000 \
+            -e TITAN_ID="$(whoami)@$(hostname)" \
+            titan-legacy
+          
+          echo "⏳ Esperando 15 segundos..."
+          sleep 15
+          
+          # Verificar logs
+          docker logs titan-core
 
-      - name: Snyk Test
+      - name: Install Snyk in container
         run: |
-          snyk test --severity-threshold=high || true
+          docker exec titan-core apt-get update
+          docker exec titan-core apt-get install -y npm
+          docker exec titan-core npm install -g snyk
+          docker exec titan-core snyk --version
+
+      - name: Snyk Test inside container
+        run: |
+          docker exec titan-core snyk test --severity-threshold=high > snyk-container.txt || true
+          cat snyk-container.txt
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
@@ -54,7 +72,9 @@ jobs:
       - name: Generate Snyk HTML Report
         if: always()
         run: |
-          snyk test --severity-threshold=high --json > snyk-report.json || true
+          docker exec titan-core snyk test --severity-threshold=high --json > snyk-report.json || true
+          # Copiar el JSON del contenedor al runner
+          docker cp titan-core:/app/snyk-report.json ./snyk-report.json || true
           snyk-to-html -i snyk-report.json -o snyk-report.html || true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -75,67 +95,29 @@ jobs:
         continue-on-error: true
 
       # ============================================
-      # ZAP - TITAN LOGISTICS (PUERTO 5000)
+      # ZAP - CONFIGURACIÓN MEJORADA
       # ============================================
       - name: Install ZAP API
         run: pip install python-owasp-zap-v2.4
-
-      - name: Build and Run Titan Legacy App
-        run: |
-          # Construir la imagen
-          docker build -t titan-legacy .
-          
-          # Verificar estructura del proyecto
-          echo "=== Estructura del proyecto ==="
-          ls -la
-          echo "=== Archivos Python ==="
-          find . -name "*.py" | head -20
-          
-          # Verificar que app.py existe
-          if [ ! -f "app.py" ]; then
-            echo "❌ ERROR: No se encuentra app.py"
-            exit 1
-          fi
-          
-          # Ejecutar contenedor con la variable TITAN_ID requerida
-          docker run -d --name titan-core -p 5000:5000 \
-            -e TITAN_ID="$(whoami)@$(hostname)" \
-            titan-legacy
-          
-          echo "⏳ Esperando 10 segundos para que la app inicie..."
-          sleep 10
-          
-          # Verificar logs del contenedor
-          echo "=== Logs del contenedor ==="
-          docker logs titan-core || true
-          
-          # Verificar estado del contenedor
-          echo "=== Estado del contenedor ==="
-          docker ps -a | grep titan-core
-          
-          # Verificar si el contenedor sigue corriendo
-          if ! docker ps | grep -q titan-core; then
-            echo "⚠️  El contenedor no está corriendo. Mostrando últimos logs:"
-            docker logs titan-core
-          fi
 
       - name: Run ZAP
         run: |
           docker run -d --name zap --network host -v $(pwd):/zap/wrk:rw \
             zaproxy/zap-stable \
             zap.sh -daemon -host 0.0.0.0 -port 8080 \
-            -config api.key=${{ secrets.ZAP_API_KEY }}
-          echo "⏳ Esperando 30 segundos para que ZAP inicie..."
+            -config api.key=${{ secrets.ZAP_API_KEY }} \
+            -config scanner.ascan.rules=all
+          echo "⏳ Esperando 30 segundos..."
           sleep 30
 
-      - name: ZAP Scan
+      - name: ZAP Deep Scan
         run: python zap_scan.py
         env:
           ZAP_API_KEY: ${{ secrets.ZAP_API_KEY }}
         continue-on-error: true
 
       # ============================================
-      # REPORTES
+      # VERIFICACIÓN DE REPORTES
       # ============================================
       - name: Check generated reports
         if: always()
@@ -167,17 +149,3 @@ jobs:
           docker build -t titan-core-secured:latest .
           echo "✅ Imagen Docker construida: titan-core-secured:latest"
           docker images | grep titan-core
-
-      # ============================================
-      # NOTIFICACIÓN FINAL
-      # ============================================
-      - name: Notificación
-        if: always()
-        run: |
-          echo "========================================"
-          echo "🚀 Titan Logistics - Core v4.5 Enterprise"
-          echo "📊 Pipeline de seguridad completado"
-          echo "📦 Imagen final: titan-core-secured:latest"
-          echo "📈 SonarCloud: https://sonarcloud.io/project/overview?id=Oskiir23_titan_project"
-          echo "📊 Reportes disponibles en artifacts"
-          echo "========================================"
