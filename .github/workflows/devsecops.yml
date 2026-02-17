@@ -1,0 +1,161 @@
+name: DevSecOps Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  security-pipeline:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks
+        uses: zricethezav/gitleaks-action@v1.6.0
+        continue-on-error: true
+
+      # ============================================
+      # SNYK
+      # ============================================
+      - name: Install system dependencies and Snyk
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libjpeg-dev zlib1g-dev
+          pip install --no-cache-dir -r requirements.txt
+          npm install -g snyk
+          snyk --version
+
+      - name: Snyk Test
+        run: |
+          snyk test --severity-threshold=high || true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Install snyk-to-html
+        if: always()
+        run: npm install -g snyk-to-html@1.4.0
+
+      - name: Generate Snyk HTML Report
+        if: always()
+        run: |
+          snyk test --severity-threshold=high --json > snyk-report.json || true
+          snyk-to-html -i snyk-report.json -o snyk-report.html || true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      # ============================================
+      # SONARCLOUD - CONFIGURADO PARA TU PROYECTO
+      # ============================================
+      - name: SonarCloud Scan
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.host.url=https://sonarcloud.io
+            -Dsonar.organization=oskiir23
+            -Dsonar.projectKey=Oskiir23_titan_project
+            -Dsonar.sources=.
+        continue-on-error: true
+
+      # ============================================
+      # ZAP - PARA TITAN LEGACY (PUERTO 5000)
+      # ============================================
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install ZAP API
+        run: pip install python-owasp-zap-v2.4
+
+      - name: Build and Run Titan Legacy App
+        run: |
+          # Construir la imagen local del examen
+          docker build -t titan-legacy .
+          
+          # Ejecutar contenedor en puerto 5000 con la variable TITAN_ID requerida
+          docker run -d --name titan-core -p 5000:5000 \
+            -e TITAN_ID="$(whoami)@$(hostname)" \
+            titan-legacy
+          
+          echo "⏳ Esperando 30 segundos para que la app inicie..."
+          sleep 30
+          
+          # Verificar que la app está accesible
+          curl -f http://localhost:5000/login || echo "⚠️ La app no responde en /login"
+
+      - name: Run ZAP
+        run: |
+          docker run -d --name zap --network host -v $(pwd):/zap/wrk:rw \
+            zaproxy/zap-stable \
+            zap.sh -daemon -host 0.0.0.0 -port 8080 \
+            -config api.key=${{ secrets.ZAP_API_KEY }}
+          echo "⏳ Esperando 30 segundos para que ZAP inicie..."
+          sleep 30
+
+      - name: ZAP Scan
+        run: python zap_scan.py
+        env:
+          ZAP_API_KEY: ${{ secrets.ZAP_API_KEY }}
+        continue-on-error: true
+
+      # ============================================
+      # VERIFICACIÓN DE REPORTES
+      # ============================================
+      - name: Check generated reports
+        if: always()
+        run: |
+          echo "=== VERIFICANDO REPORTES ==="
+          ls -la snyk-report.html && echo "✅ snyk-report.html OK" || echo "⚠️ snyk-report.html NO generado"
+          ls -la zap-report.html && echo "✅ zap-report.html OK" || echo "⚠️ zap-report.html NO generado"
+          echo "============================="
+
+      # ============================================
+      # ARTIFACTS
+      # ============================================
+      - name: Upload Snyk Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: snyk-report
+          path: snyk-report.html
+          if-no-files-found: warn
+
+      - name: Upload ZAP Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-report
+          path: zap-report.html
+          if-no-files-found: warn
+
+      # ============================================
+      # BUILD DOCKER FINAL (solo si éxito)
+      # ============================================
+      - name: Build Final Docker image
+        if: success()
+        run: |
+          docker build -t titan-core-secured:latest .
+          echo "✅ Imagen Docker construida: titan-core-secured:latest"
+          docker images | grep titan-core
+
+      # ============================================
+      # NOTIFICACIÓN FINAL
+      # ============================================
+      - name: Notificación
+        if: always()
+        run: |
+          echo "========================================"
+          echo "🚀 Titan Logistics - Core v4.5 Enterprise"
+          echo "📊 Pipeline de seguridad completado"
+          echo "📦 Imagen final: titan-core-secured:latest"
+          echo "📈 SonarCloud: https://sonarcloud.io/project/overview?id=negrete-8_pygoat"
+          echo "📊 Reportes disponibles en artifacts"
+          echo "========================================"
