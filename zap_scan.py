@@ -4,11 +4,11 @@ import sys
 from zapv2 import ZAPv2
 
 print("="*60)
-print("OWASP ZAP SCAN - PyGoat")
+print("OWASP ZAP SCAN - Titan Logistics")
 print("="*60)
 
 api_key = os.environ.get('ZAP_API_KEY', '')
-target = 'http://localhost:8000'
+target = 'http://localhost:5000'  # CAMBIADO A PUERTO 5000
 
 print(f"[1] Target: {target}")
 print(f"[2] API Key: {'✅ OK' if api_key else '❌ NO'}")
@@ -35,7 +35,7 @@ if not conectado:
 
 # Nueva sesión
 print("[4] Creando nueva sesión...")
-zap.core.new_session(name='pygoat-scan', overwrite=True)
+zap.core.new_session(name='titan-scan', overwrite=True)
 
 # Spider
 print("[5] Iniciando spider...")
@@ -73,7 +73,7 @@ print(f"  🟢 LOW: {len(low_alerts)}")
 print(f"  📋 TOTAL: {len(alerts)}")
 
 # ============================================
-# GENERAR REPORTE HTML COMPLETO - SIN NINGÚN LÍMITE
+# GENERAR REPORTE HTML COMPLETO
 # ============================================
 print("[8] Generando reporte HTML detallado...")
 
@@ -82,7 +82,7 @@ html_content = f"""<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OWASP ZAP DAST Report - PyGoat</title>
+    <title>OWASP ZAP DAST Report - Titan Logistics</title>
     <style>
         body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background-color: #f5f5f5; }}
         .container {{ max-width: 1200px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }}
@@ -108,7 +108,7 @@ html_content = f"""<!DOCTYPE html>
 </head>
 <body>
     <div class="container">
-        <h1>🔍 OWASP ZAP DAST Scan Report</h1>
+        <h1>🔍 OWASP ZAP DAST Scan Report - Titan Logistics</h1>
         <p><strong>Target:</strong> {target}</p>
         <p><strong>Fecha:</strong> {time.strftime('%Y-%m-%d %H:%M:%S')}</p>
         
@@ -134,9 +134,7 @@ html_content = f"""<!DOCTYPE html>
         <h2>❌ Alertas de Alto Riesgo (HIGH) - {len(high_alerts)} encontradas</h2>
 """
 
-# ============================================
-# ALERTAS HIGH - TODAS, SIN LÍMITE
-# ============================================
+# ALERTAS HIGH
 if high_alerts:
     for alert in high_alerts:
         html_content += f"""
@@ -159,9 +157,7 @@ html_content += f"""
         <h2>🟡 Alertas de Riesgo Medio (MEDIUM) - {len(medium_alerts)} encontradas</h2>
 """
 
-# ============================================
-# ALERTAS MEDIUM - TODAS, SIN LÍMITE
-# ============================================
+# ALERTAS MEDIUM
 if medium_alerts:
     for alert in medium_alerts:
         html_content += f"""
@@ -183,9 +179,7 @@ html_content += f"""
         <h2>🟢 Alertas de Riesgo Bajo (LOW) - {len(low_alerts)} encontradas</h2>
 """
 
-# ============================================
-# ALERTAS LOW - TODAS, SIN LÍMITE
-# ============================================
+# ALERTAS LOW
 if low_alerts:
     for alert in low_alerts:
         html_content += f"""
@@ -233,19 +227,17 @@ else:
     print("    ❌ No se pudo generar el reporte")
     sys.exit(1)
 
-# ============================================
 # ACEPTACIÓN DE RIESGOS - PRÁCTICA DOCENTE
-# ============================================
 if len(high_alerts) > 0:
     print(f"\n⚠️  SE ENCONTRARON {len(high_alerts)} VULNERABILIDADES HIGH")
     print("   🔴 EN UN ENTORNO REAL ESTO PARARÍA EL PIPELINE")
     print("   🟢 ACEPTADAS PARA LABORATORIO DOCENTE - CONTINUANDO...")
     print("\n   Vulnerabilidades encontradas (solo informe):")
-    for alert in high_alerts[:5]:  # Muestra solo las primeras 5
+    for alert in high_alerts[:5]:
         print(f"     • {alert.get('alert', 'N/A')}")
     if len(high_alerts) > 5:
         print(f"     • ... y {len(high_alerts)-5} más")
-    sys.exit(0)  # <--- ESTO ES LO IMPORTANTE: sale con éxito
+    sys.exit(0)
 else:
     print("\n✅ PIPELINE EXITOSO: No hay vulnerabilidades HIGH")
     sys.exit(0)
