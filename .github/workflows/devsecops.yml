@@ -1,4 +1,4 @@
-name: DevSecOps Pipeline
+name: DevSecOps Pipeline - Titan Logistics
 
 on:
   push:
@@ -60,7 +60,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
       # ============================================
-      # SONARCLOUD - CORREGIDO
+      # SONARCLOUD
       # ============================================
       - name: SonarCloud Scan
         uses: sonarsource/sonarqube-scan-action@master
@@ -75,7 +75,7 @@ jobs:
         continue-on-error: true
 
       # ============================================
-      # ZAP - CORREGIDO
+      # ZAP - TITAN LOGISTICS (PUERTO 5000)
       # ============================================
       - name: Install ZAP API
         run: pip install python-owasp-zap-v2.4
@@ -85,28 +85,39 @@ jobs:
           # Construir la imagen
           docker build -t titan-legacy .
           
-          # Verificar que la app tiene CMD
-          echo "=== Verificando Dockerfile ==="
-          grep -i "CMD" Dockerfile || echo "⚠️ No se encontró CMD en Dockerfile"
+          # Verificar estructura del proyecto
+          echo "=== Estructura del proyecto ==="
+          ls -la
+          echo "=== Archivos Python ==="
+          find . -name "*.py" | head -20
           
-          # Ejecutar contenedor
+          # Verificar que app.py existe
+          if [ ! -f "app.py" ]; then
+            echo "❌ ERROR: No se encuentra app.py"
+            exit 1
+          fi
+          
+          # Ejecutar contenedor con la variable TITAN_ID requerida
           docker run -d --name titan-core -p 5000:5000 \
             -e TITAN_ID="$(whoami)@$(hostname)" \
             titan-legacy
           
-          echo "⏳ Esperando 30 segundos..."
-          sleep 30
+          echo "⏳ Esperando 10 segundos para que la app inicie..."
+          sleep 10
           
           # Verificar logs del contenedor
           echo "=== Logs del contenedor ==="
-          docker logs titan-core
+          docker logs titan-core || true
           
-          # Verificar si el contenedor está corriendo
+          # Verificar estado del contenedor
+          echo "=== Estado del contenedor ==="
           docker ps -a | grep titan-core
           
-          # Probar conexión
-          echo "=== Probando conexión a la app ==="
-          curl -v http://localhost:5000/login || echo "⚠️ App no responde"
+          # Verificar si el contenedor sigue corriendo
+          if ! docker ps | grep -q titan-core; then
+            echo "⚠️  El contenedor no está corriendo. Mostrando últimos logs:"
+            docker logs titan-core
+          fi
 
       - name: Run ZAP
         run: |
@@ -114,7 +125,7 @@ jobs:
             zaproxy/zap-stable \
             zap.sh -daemon -host 0.0.0.0 -port 8080 \
             -config api.key=${{ secrets.ZAP_API_KEY }}
-          echo "⏳ Esperando 30 segundos..."
+          echo "⏳ Esperando 30 segundos para que ZAP inicie..."
           sleep 30
 
       - name: ZAP Scan
@@ -156,3 +167,17 @@ jobs:
           docker build -t titan-core-secured:latest .
           echo "✅ Imagen Docker construida: titan-core-secured:latest"
           docker images | grep titan-core
+
+      # ============================================
+      # NOTIFICACIÓN FINAL
+      # ============================================
+      - name: Notificación
+        if: always()
+        run: |
+          echo "========================================"
+          echo "🚀 Titan Logistics - Core v4.5 Enterprise"
+          echo "📊 Pipeline de seguridad completado"
+          echo "📦 Imagen final: titan-core-secured:latest"
+          echo "📈 SonarCloud: https://sonarcloud.io/project/overview?id=Oskiir23_titan_project"
+          echo "📊 Reportes disponibles en artifacts"
+          echo "========================================"
