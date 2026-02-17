@@ -21,20 +21,19 @@ jobs:
         continue-on-error: true
 
       # ============================================
-      # SNYK - CORREGIDO
+      # SNYK
       # ============================================
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'  # Cambiado a 3.9 para compatibilidad
+          python-version: '3.9'
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libjpeg-dev zlib1g-dev python3-dev build-essential
           pip install --upgrade pip
-          # Instalar PyYAML primero con su versión compatible
-          pip install pyyaml==5.4.1  # Versión más moderna compatible
+          pip install pyyaml==5.4.1
           pip install -r requirements.txt || true
 
       - name: Install Snyk
@@ -61,7 +60,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
       # ============================================
-      # SONARCLOUD - ACTUALIZA CON TUS DATOS
+      # SONARCLOUD - CORREGIDO
       # ============================================
       - name: SonarCloud Scan
         uses: sonarsource/sonarqube-scan-action@master
@@ -76,23 +75,38 @@ jobs:
         continue-on-error: true
 
       # ============================================
-      # ZAP - PARA TITAN LEGACY
+      # ZAP - CORREGIDO
       # ============================================
+      - name: Install ZAP API
+        run: pip install python-owasp-zap-v2.4
+
       - name: Build and Run Titan Legacy App
         run: |
-          # Construir la imagen local del examen
+          # Construir la imagen
           docker build -t titan-legacy .
           
-          # Ejecutar contenedor en puerto 5000
+          # Verificar que la app tiene CMD
+          echo "=== Verificando Dockerfile ==="
+          grep -i "CMD" Dockerfile || echo "⚠️ No se encontró CMD en Dockerfile"
+          
+          # Ejecutar contenedor
           docker run -d --name titan-core -p 5000:5000 \
             -e TITAN_ID="$(whoami)@$(hostname)" \
             titan-legacy
           
-          echo "⏳ Esperando 30 segundos para que la app inicie..."
+          echo "⏳ Esperando 30 segundos..."
           sleep 30
           
-          # Verificar que la app está accesible
-          curl -f http://localhost:5000/login || echo "⚠️ La app no responde en /login"
+          # Verificar logs del contenedor
+          echo "=== Logs del contenedor ==="
+          docker logs titan-core
+          
+          # Verificar si el contenedor está corriendo
+          docker ps -a | grep titan-core
+          
+          # Probar conexión
+          echo "=== Probando conexión a la app ==="
+          curl -v http://localhost:5000/login || echo "⚠️ App no responde"
 
       - name: Run ZAP
         run: |
@@ -100,7 +114,7 @@ jobs:
             zaproxy/zap-stable \
             zap.sh -daemon -host 0.0.0.0 -port 8080 \
             -config api.key=${{ secrets.ZAP_API_KEY }}
-          echo "⏳ Esperando 30 segundos para que ZAP inicie..."
+          echo "⏳ Esperando 30 segundos..."
           sleep 30
 
       - name: ZAP Scan
@@ -110,7 +124,7 @@ jobs:
         continue-on-error: true
 
       # ============================================
-      # VERIFICACIÓN DE REPORTES
+      # REPORTES
       # ============================================
       - name: Check generated reports
         if: always()
@@ -120,9 +134,6 @@ jobs:
           ls -la zap-report.html && echo "✅ zap-report.html OK" || echo "⚠️ zap-report.html NO generado"
           echo "============================="
 
-      # ============================================
-      # ARTIFACTS
-      # ============================================
       - name: Upload Snyk Report
         uses: actions/upload-artifact@v4
         if: always()
@@ -139,9 +150,6 @@ jobs:
           path: zap-report.html
           if-no-files-found: warn
 
-      # ============================================
-      # BUILD DOCKER FINAL
-      # ============================================
       - name: Build Final Docker image
         if: success()
         run: |
